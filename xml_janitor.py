@@ -8,12 +8,18 @@ import sys
 #Logging configurations
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-logging.basicConfig(
-    level=logging.INFO, #Set logging level. Here I have set to INFO, but can be changed.
-    format="%(levelname)s: %(message)s" #Format of log output. I have excluded the logger name since I only have one file.
-)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
-lumberjack = logging.getLogger(__name__)
+general_handler = logging.FileHandler("logging.log", mode="w")
+general_handler.setLevel(logging.INFO)
+general_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+logger.addHandler(general_handler)
+
+missing_handler = logging.FileHandler("missing_data.log", mode="w")
+missing_handler.setLevel(logging.WARNING)
+general_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+logger.addHandler(missing_handler)
 
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #Validating xml file against schema
@@ -23,25 +29,25 @@ lumberjack = logging.getLogger(__name__)
 def build_schema_object(xsd_path):
     try:
         schema_object = xmlschema.XMLSchema(xsd_path) #Build an XMLSchema object
-        lumberjack.info("Succesfully built schema")
+        logger.info("Succesfully built schema")
         return schema_object
     except:
-        lumberjack.error("Failed to build schema") #Catch and log an error if schema fails to build
+        logger.error("Failed to build schema") #Catch and log an error if schema fails to build
         return None
 
 #validate xml against schema
 def validate_xml(xml_path, schema_object):
     try:
         schema_object.validate(xml_path) #Check provided xml against schema.
-        lumberjack.info("Validated XML against schema")
+        logger.info("Validated XML against schema")
         return True
 
     except xmlschema.XMLSchemaValidationError as e: #Catch and log validation errors
-        lumberjack.error(f"Validation failed: {e.message}")
+        logger.error(f"Validation failed: {e.message}")
         return False
 
     except Exception as e:
-        lumberjack.error(f"Error: {e.message}") #Catch and log other errors
+        logger.error(f"Error: {e.message}") #Catch and log other errors
         return False
 
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -51,7 +57,7 @@ def validate_xml(xml_path, schema_object):
 #Function for obtaining list of designations. Takes input of the root of an etree object.
 def get_designations(tree):
     des_list = [child for child in tree.iterchildren() if child.tag != "DateGenerated"]
-    lumberjack.info("Retrieved designations")
+    logger.info("Retrieved designations")
     return des_list
 
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -68,42 +74,42 @@ def get_designations(tree):
 def uniqueid_janitor(UniqueID):
     if UniqueID is None:
         #Raise a warning if no Unique ID is found, but proceed with None
-        lumberjack.warning("Failed to find unique ID")
+        logger.warning("Failed to find unique ID")
         return None
 
-    lumberjack.info(f"Found unique ID: {UniqueID.text}")
+    logger.info(f"Found unique ID: {UniqueID.text}")
     return UniqueID.text.strip()
 
 #Fetch and clean titles from a designation
-def title_janitor(Titles):
+def title_janitor(Titles, uniqueID):
     if Titles is None:
-        lumberjack.info("No titles found")
+        logger.warning(f"No titles found for {uniqueID}")
         return None
 
     res = set()
     for child in Titles.iterchildren():
         res.add(child.text.lower().strip())
-    lumberjack.info("Found titles")
+    logger.info(f"Found titles for {uniqueID}")
     return " | ".join(list(res))
 
 #Fetch and validate designation type
-def designation_type_janitor(des_type):
+def designation_type_janitor(des_type, uniqueID):
     cleaned_des_type = des_type.lower().strip()
 
     #Check if des type is valid as per government website rules
     if cleaned_des_type in ["individual", "entity", "ship"]:
-        lumberjack.info("Found designation type")
+        logger.info(f"Found designation type for {uniqueID}")
         return cleaned_des_type
 
     #If des type is not IndividualEntityShip, raise a warning but still proceed with unknown type.
     else:
-        lumberjack.warning(f"Unexpected designation type: {des_type}")
+        logger.warning(f"Unexpected designation type for {uniqueID}: {des_type}")
         return des_type
 
 #Gather and clean latin names
-def latin_name_janitor(Names):
+def latin_name_janitor(Names, uniqueID):
     if Names is None:
-        lumberjack.warning("No names found")
+        logger.warning(f"No names found for {uniqueID}")
         return None
 
     #Initialise as lists to preserve order
@@ -122,15 +128,15 @@ def latin_name_janitor(Names):
         #secondary names
         if nametype == "primary name":
             primary_name.append(fullname)
-            lumberjack.info("Found primary name")
+            logger.info(f"Found primary name for {uniqueID}")
         else:
             secondary_names.append(fullname)
     return [primary_name[0], " | ".join(secondary_names)]
 
 #Fetch and clean non latin names.
-def non_latin_name_janitor(NonLatinNames):
+def non_latin_name_janitor(NonLatinNames, uniqueID):
     if NonLatinNames is None:
-        lumberjack.info("No non latin names found")
+        logger.warning(f"No non latin names found for {uniqueID}")
         return None
 
     nameset = set()
@@ -138,13 +144,13 @@ def non_latin_name_janitor(NonLatinNames):
         if name.tag == "NameNonLatinScript":
             cleaned_name = " ".join(name.text.split())
             nameset.add(cleaned_name)
-    lumberjack.info("Found non latin names")
+    logger.info(f"Found non latin names for {uniqueID}")
     return list(nameset)
 
 #Fetch and encode genders
-def gender_janitor(Genders):
+def gender_janitor(Genders, uniqueID):
     if Genders is None:
-        lumberjack.info("No genders found")
+        logger.warning(f"No genders found for {uniqueID}")
         return None
 
     res = set()
@@ -155,13 +161,13 @@ def gender_janitor(Genders):
             #Encode male to m and female to f for more structure and standardisation
             gender_code = "m" if gender == "male" else "f" if gender == "female" else gender
             res.add(gender_code)
-    lumberjack.info("Found gender")
+    logger.info(f"Found gender for {uniqueID}")
     return " | ".join(list(res))
 
 #Fetch and standardise dates of birth
-def dob_janitor(DOBs):
+def dob_janitor(DOBs, uniqueID):
     if DOBs is None:
-        lumberjack.info("No DOB found")
+        logger.warning(f"No DOB found for {uniqueID}")
         return None
 
     DOBset = set()
@@ -173,17 +179,21 @@ def dob_janitor(DOBs):
             DOBset.add(f"dd/mm/{DOBtext}")
         else:
             DOBset.add(DOBtext)
-    lumberjack.info("Added DOB(s)")
+    logger.info(f"Added DOB(s) for {uniqueID}")
     return " | ".join(list(DOBset))
 
 #Find and standardise birth country
-def birth_country_janitor(CountryOfBirth):
-    return None if CountryOfBirth is None else CountryOfBirth.text.lower().strip()
+def birth_country_janitor(CountryOfBirth, uniqueID):
+    if CountryOfBirth is None:
+        logger.warning(f"No birth country found for {uniqueID}")
+        return None
+    logger.info(f"Found country for {uniqueID}")
+    return CountryOfBirth.text.lower().strip()
 
 #Find and standardise address(s)
-def address_janitor(Addresses):
+def address_janitor(Addresses, uniqueID):
     if Addresses is None:
-        lumberjack.info("No addresses found")
+        logger.warning(f"No addresses found for {uniqueID}")
         return None
 
     res = set()
@@ -196,28 +206,28 @@ def address_janitor(Addresses):
 
         fulladdress = ", ".join([add.lower().strip() for add in addresslist if add != None])
         res.add(fulladdress)
-    lumberjack.info("Found address(s)")
+    logger.info(f"Found address(s) for {uniqueID}")
     return " | ".join(list(res))
 
 #Find passport number
 #I left passport number as is since different countries may have different formats for passport numbers,
 #So i decided to preserve the integrity of the data.
-def passport_no_janitor(PassportDetails):
+def passport_no_janitor(PassportDetails, uniqueID):
     if PassportDetails is None:
-        lumberjack.info("No passport details found")
+        logger.warning(f"No passport details found for {uniqueID}")
         return None
 
     res = set()
     for Passport in PassportDetails.iterdescendants():
         if Passport.tag == "PassportNumber":
             res.add(Passport.text)
-    lumberjack.info("Found passport details")
+    logger.info(f"Found passport details for {uniqueID}")
     return " | ".join(list(res))
 
 #Find and standardise phone numbers.
-def phone_number_janitor(PhoneNumbers):
+def phone_number_janitor(PhoneNumbers, uniqueID):
     if PhoneNumbers is None:
-        lumberjack.info("No phone numbers found")
+        logger.warning(f"No phone numbers found for {uniqueID}")
         return None
 
     res = set()
@@ -228,26 +238,26 @@ def phone_number_janitor(PhoneNumbers):
         num = child.text.split("-")
         cleaned_num = "".join([num.lower().strip() for num in num if num != "-"])
         res.add(cleaned_num)
-    lumberjack.info("Found phone number(s)")
+    logger.info(f"Found phone number(s) for {uniqueID}")
     return " | ".join(list(res))
 
 #Find email addresses
-def email_address_janitor(EmailAddresses):
+def email_address_janitor(EmailAddresses, uniqueID):
     if EmailAddresses is None:
-        lumberjack.info("No email addresses found")
+        logger.warning(f"No email addresses found for {uniqueID}")
         return None
 
     res = set()
     for child in EmailAddresses.iterchildren():
         email = child.text.strip()
         res.add(email)
-    lumberjack.info("Found email address(s)")
+    logger.info(f"Found email address(s) for {uniqueID}")
     return " | ".join(list(res))
 
 #Find IMO number for ships
-def imonum_janitor(IMONumber):
+def imonum_janitor(IMONumber, uniqueID):
     if IMONumber is None:
-        lumberjack.info("No IMO Number found")
+        logger.warning(f"No IMO Number found for {uniqueID}")
         return None
 
     imo_num = IMONumber.text.strip()
@@ -261,9 +271,9 @@ def imonum_janitor(IMONumber):
 #Fetch all current and previous owners of the ship
 #Formatting is as follows: Current owner(s) || Previous Owner(s)
 #This means more information is given in the final csv file whilst still maintaining searchability
-def ship_owner_janitor(Ship):
+def ship_owner_janitor(Ship, uniqueID):
     if Ship is None:
-        lumberjack.info("No ship owner found")
+        logger.warning(f"No ship owner found for {uniqueID}")
         return None
 
     current_owners = set()
@@ -278,7 +288,7 @@ def ship_owner_janitor(Ship):
             cleaned_name = child.text.lower().strip().split()
             previous_owners.add(" ".join(cleaned_name))
 
-    lumberjack.info("Found ship owner(s)")
+    logger.info(f"Found ship owner(s) for {uniqueID}")
 
     #Logic for joining two strings with a double pipe if there exist secondary owners
     current_str = " | ".join(current_owners)
@@ -288,9 +298,9 @@ def ship_owner_janitor(Ship):
 
 #Find all current and previous flags for a ship.
 #Formatting is as follows: Current flag || Previous flag(s)
-def flag_janitor(Ship):
+def flag_janitor(Ship, uniqueID):
     if Ship is None:
-        lumberjack.info("No ship flag found")
+        logger.warning(f"No ship flag found for {uniqueID}")
         return None
 
     current_flags = set()
@@ -304,7 +314,7 @@ def flag_janitor(Ship):
             cleaned_name = child.text.lower().strip().split()
             previous_flags.add(" ".join(cleaned_name))
 
-    lumberjack.info("Found ship flag(s)")
+    logger.info(f"Found ship flag(s) for {uniqueID}")
 
     #Logic for splitting current and previous flags
     current_str = " | ".join(current_flags)
@@ -342,74 +352,75 @@ def build_csv(designations):
         #Create output list for storing needed data about each Unique ID
         output_list = []
 
-        #Find xpaths to needed elements/subtree and rund janitor on data
+        #Find xpaths to needed elements/subtree and run janitor on data
         uniqueid = designation.find(".//UniqueID")
-        output_list.append(uniqueid_janitor(uniqueid))
+        clean_uniqueid = uniqueid_janitor(uniqueid)
+        output_list.append(clean_uniqueid)
 
         titles = designation.find(".//Titles")
-        output_list.append(title_janitor(titles))
+        output_list.append(title_janitor(titles, clean_uniqueid))
 
         names = designation.find(".//Names")
-        primary, secondary = latin_name_janitor(names)
+        primary, secondary = latin_name_janitor(names, clean_uniqueid)
         output_list.append(primary)
         output_list.append(secondary)
 
         des_type = designation.findtext(".//IndividualEntityShip")
-        output_list.append(designation_type_janitor(des_type))
+        output_list.append(designation_type_janitor(des_type, clean_uniqueid))
 
         non_latin = designation.find(".//NonLatinNames")
-        output_list.append(non_latin_name_janitor(non_latin))
+        output_list.append(non_latin_name_janitor(non_latin, clean_uniqueid))
 
         gender_block = designation.find(".//Genders")
-        output_list.append(gender_janitor(gender_block))
+        output_list.append(gender_janitor(gender_block, clean_uniqueid))
 
         dob_block = designation.find(".//DOBs")
-        output_list.append(dob_janitor(dob_block))
+        output_list.append(dob_janitor(dob_block, clean_uniqueid))
 
         birth_country = designation.find(".//CountryOfBirth")
-        output_list.append(birth_country_janitor(birth_country))
+        output_list.append(birth_country_janitor(birth_country, clean_uniqueid))
 
         address_block = designation.find(".//Addresses")
-        output_list.append(address_janitor(address_block))
+        output_list.append(address_janitor(address_block, clean_uniqueid))
 
         passport_block = designation.find(".//PassportDetails")
-        output_list.append(passport_no_janitor(passport_block))
+        output_list.append(passport_no_janitor(passport_block, clean_uniqueid))
 
         phone_number_block = designation.find(".//PhoneNumbers")
-        output_list.append(phone_number_janitor(phone_number_block))
+        output_list.append(phone_number_janitor(phone_number_block, clean_uniqueid))
 
         email_address_block = designation.find(".//EmailAddresses")
-        output_list.append(email_address_janitor(email_address_block))
+        output_list.append(email_address_janitor(email_address_block, clean_uniqueid))
 
         imo_num_block = designation.find(".//IMONumber")
-        output_list.append(imonum_janitor(imo_num_block))
+        output_list.append(imonum_janitor(imo_num_block, clean_uniqueid))
 
         ship_block = designation.find(".//Ship")
-        output_list.append(ship_owner_janitor(ship_block))
-        output_list.append(flag_janitor(ship_block))
+        output_list.append(ship_owner_janitor(ship_block, clean_uniqueid))
+        output_list.append(flag_janitor(ship_block, clean_uniqueid))
 
         df_data.append(output_list)
 
     #Create dataframe and save to a csv file
     df = pd.DataFrame(df_data)
-    lumberjack.info('Created dataframe')
-    clean_csv_path = "./output.csv"
+    logger.info('Created dataframe')
+    clean_csv_path = "./CleanedSanctionsData.csv"
     df.to_csv(clean_csv_path, index=False)
-    lumberjack.info(f"Saved cleaned csv to {clean_csv_path}")
+    logger.info(f"Saved cleaned csv to {clean_csv_path}")
 
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #Main method to run functions in correct order
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 def main(xml_path, xsd_path):
-    lumberjack.info('Started')
+    logger.info('Started')
     xmltree = etree.parse(xml_path)
     root = xmltree.getroot()
     schema = build_schema_object(xsd_path)
     validate_xml(xml_path, schema)
     designations = get_designations(root)
     build_csv(designations)
-    lumberjack.info('Finished')
+    logger.info('Finished')
 
 #Collect xml and xsd paths as input from user
 if __name__ == "__main__":

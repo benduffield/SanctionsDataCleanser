@@ -77,4 +77,3 @@ There is a lot of missing data in the final csv output. This could be for two ma
 * To document missing data, I created a seperate log handler to write to an output file using only one logger. I understand this is a generic fix, and that more loggers and handlers can be used for more detailed and accurate logging.
 * To validate and cleanse any other xml fields, simply add another janitor
 * To further validate fields such as email addresses and phone numbers, regular expressions can be used to check data more vigorously
-* 

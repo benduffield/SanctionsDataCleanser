@@ -39,13 +39,19 @@ How to run the cleanser once dependencies have been installed:
   ```
 3. Output of interest will be in a csv format and will be named "CleanedSanctionsData.csv". Two more files "logging.log" and "missing_data.log" will also be made. The "logging.log" file contains logs of all log instances, whilst the "missing_data.log" logs every instance where no data is found for a particular designation.
 
+The code checks three levels of correctness:
+
+1. well-formed xml (fail fast)
+2. valid xml against the schema definition (fail fast)
+3. business rules (janitors) to cleanse the data (business rule failures)
+
 ## Insights:
 
-Insights into the cleanliness of the origional raw data.
+Insights into the cleanliness of the original raw data.
 
 ### Formatting inconsistencies:
 
-To give some context, I origionally chose an xml format due to the presence of a schema. However, the schema provided by the UK Government has proven to be quite weak in terms of formatting consistency, often setting element types as string and having minoccurences = 0. As such I have created some of my own formatting detailed below.
+To give some context, I originally chose an xml format due to the presence of a schema. However, the schema provided by the UK Government has proven to be quite weak in terms of formatting consistency, often setting element types as string and having minoccurences = 0. As such I have created some of my own formatting detailed below.
 
 * In the case where multiple values appear in one cell, I have seperated them by a pipe "|". In the subcase where order of the elements matters, for example in the "Owners (present and past)" column, current ownsers have been seperated from previous owners using a double pipe "||".
 * Date of birth - some dates were given as yyyy, others as dd/mm/yyyy. As such, all dates are now formatted as dd/mm/yyyy.
@@ -55,7 +61,9 @@ To give some context, I origionally chose an xml format due to the presence of a
 
 ### Duplicate records:
 
-To handle duplicate records, I often used set objects to preserve uniqueness. In the case where order of the elements matter, if else statements were used. 
+To handle duplicate records, I often used a set (instead of a list) to preserve uniqueness. In the case where order of the elements matter, if else statements were used. 
+
+There is also a potential issue with duplicate records in non-latin names. For example, the name "John Smith" and "Johns Mith" will appear as two seperate names in the output csv. Since I am not familiar with non-latin scripts, I kept each of these occurences as to not lose data integrity. They have still been formatted and standardised using one white space between words. There is also of course the possibility that these are completely seperate names. Either way, I believe keeping hold of each variation will help with fuzzy matching.
 
 ### Missing or inconsistent fields:
 
@@ -64,4 +72,9 @@ There is a lot of missing data in the final csv output. This could be for two ma
 * Designation type - A designation of type Individual will not have any data about an IMO number, for example. This means that the cell is intentionally left blank.
 * Lack of data - Data provided is often incomplete or missing completely. For example, date of birth may only provide the year of birth, or be missing from a designation entirely. In order to protect the integrity of the data, I have not tried to extrapolate any of the incomplete/missing fields.
 
-To document missing data, I created a seperate log handler to write to an output file using only one logger. I understand this is a generic fix, and that more loggers and handlers can be used for more detailed and accurate logging.
+## Enhancements
+
+* To document missing data, I created a seperate log handler to write to an output file using only one logger. I understand this is a generic fix, and that more loggers and handlers can be used for more detailed and accurate logging.
+* To validate and cleanse any other xml fields, simply add another janitor
+* To further validate fields such as email addresses and phone numbers, regular expressions can be used to check data more vigorously
+* 
